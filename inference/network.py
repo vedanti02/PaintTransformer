@@ -70,5 +70,4 @@ class Painter(nn.Layer):
                                         self.query_pos.unsqueeze(1).tile([1, b, 1]).transpose([1, 0, 2]))
 
         param = self.linear_param(hidden_state)
-        decision = self.linear_decider(hidden_state)
-        return param, decision
+        return param
