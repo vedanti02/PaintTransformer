@@ -28,6 +28,7 @@ def reconstruct_from_strokes(stroke_file, output_path, brush_folder="brush"):
     #blank canvas
     canvas = paddle.zeros([1, 3, canvas_h, canvas_w], dtype='float32')
 
+    stroke_buffer =stroke_buffer[:5]
 
     for layer_idx, layer_param in enumerate(stroke_buffer):
         print(f"Rendering layer {layer_idx+1}/{len(stroke_buffer)}  shape={layer_param.shape}")
