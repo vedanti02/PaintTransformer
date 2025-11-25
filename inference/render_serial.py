@@ -13,7 +13,7 @@ import render_utils
 import time
 
 
-def get_single_layer_lists(param, decision, ori_img, render_size_x, render_size_y, h, w, meta_brushes, dilation, erosion, stroke_num):
+def get_single_layer_lists(param, ori_img, render_size_x, render_size_y, h, w, meta_brushes, dilation, erosion, stroke_num):
     """
     get_single_layer_lists
     """
@@ -41,14 +41,14 @@ def get_single_layer_lists(param, decision, ori_img, render_size_x, render_size_
     yid_list = []
     error_list = []
 
-    for flag_idx, flag in enumerate(decision.cpu().numpy()):
-        if flag:
-            flag_idx = flag_idx // stroke_num
-            x_id = flag_idx % w
-            flag_idx = flag_idx // w
-            y_id = flag_idx % h
-            xid_list.append(x_id)
-            yid_list.append(y_id)
+    # for flag_idx, flag in enumerate(decision.cpu().numpy()):
+    #     if flag:
+    #         flag_idx = flag_idx // stroke_num
+    #         x_id = flag_idx % w
+    #         flag_idx = flag_idx // w
+    #         y_id = flag_idx % h
+    #         xid_list.append(x_id)
+    #         yid_list.append(y_id)
     
     inner_fores = valid_foregrounds[:, :, render_size_y // 10:9 * render_size_y // 10, 
                                     render_size_x // 10:9 * render_size_x // 10]
@@ -71,13 +71,9 @@ def get_single_layer_lists(param, decision, ori_img, render_size_x, render_size_
 
     error = error * inner_alpha
     error = paddle.sum(error, axis=(2, 3, 4)) / paddle.sum(inner_alpha, axis=(2, 3, 4))
-    error_list = error.reshape([-1]).numpy()[decision.numpy()]
     error_list = list(error_list)
 
-    valid_foregrounds = paddle.to_tensor(valid_foregrounds.numpy()[decision.numpy()])
-    valid_alphas = paddle.to_tensor(valid_alphas.numpy()[decision.numpy()])
     
-    selected_param = paddle.to_tensor(param.numpy()[decision.numpy()])
     return xid_list, yid_list, valid_foregrounds, valid_alphas, error_list, selected_param
 
 
@@ -142,8 +138,7 @@ def stroke_net_predict(img_patch, result_patch, patch_size, net_g, stroke_num):
     img_patch = img_patch.transpose([0, 2, 1]).reshape([-1, 3, patch_size, patch_size])
     result_patch = result_patch.transpose([0, 2, 1]).reshape([-1, 3, patch_size, patch_size])
     #*----- Stroke Predictor -----*#
-    shape_param, stroke_decision = net_g(img_patch, result_patch)
-    stroke_decision = (stroke_decision > 0).astype('float32')
+    shape_param = net_g(img_patch, result_patch)
     #*----- sampling color -----*#
     grid = shape_param[:, :, :2].reshape([img_patch.shape[0] * stroke_num, 1, 1, 2])
     img_temp = img_patch.unsqueeze(1).tile([1, stroke_num, 1, 1, 1]).reshape([
@@ -153,13 +148,12 @@ def stroke_net_predict(img_patch, result_patch, patch_size, net_g, stroke_num):
     stroke_param = paddle.concat([shape_param, color], axis=-1)
 
     param = stroke_param.reshape([-1, 8])
-    decision = stroke_decision.reshape([-1]).astype('bool')
     param[:, :2] = param[:, :2] / 1.25 + 0.1
     param[:, 2:4] = param[:, 2:4] / 1.25
-    return param, decision
+    return param
 
 
-def sort_strokes(params, decision, scores):
+def sort_strokes(params, scores):
     """
     sort_strokes
     """
@@ -169,8 +163,7 @@ def sort_strokes(params, decision, scores):
         tmp_pick_params = paddle.gather(params[:, :, idx], axis=1, index=sorted_index)
         sorted_params.append(tmp_pick_params)
     sorted_params = paddle.stack(sorted_params, axis=2)
-    sorted_decison = paddle.gather(decision.squeeze(2), axis=1, index=sorted_index)
-    return sorted_params, sorted_decison
+    return sorted_params
 
 
 def render_serial(original_img, net_g, meta_brushes):
@@ -207,10 +200,10 @@ def render_serial(original_img, net_g, meta_brushes):
             #* -------------------------------------------------------------*#
             #* -------------generate strokes on window type A---------------*#
             #* -------------------------------------------------------------*#
-            param, decision = stroke_net_predict(img_patch, result_patch, patch_size, net_g, stroke_num)
+            param = stroke_net_predict(img_patch, result_patch, patch_size, net_g, stroke_num)
             expand_img = original_img
             wA_xid_list, wA_yid_list, wA_fore_list, wA_alpha_list, wA_error_list, wA_params = \
-                get_single_layer_lists(param, decision, original_img, render_size_x, render_size_y, h, w, 
+                get_single_layer_lists(param, original_img, render_size_x, render_size_y, h, w, 
                                         meta_brushes, dilation, erosion, stroke_num)
 
             #* -------------------------------------------------------------*#
@@ -230,14 +223,14 @@ def render_serial(original_img, net_g, meta_brushes):
             h += 1
             w += 1
 
-            param, decision = stroke_net_predict(img_patch, result_patch, patch_size, net_g, stroke_num)
+            param = stroke_net_predict(img_patch, result_patch, patch_size, net_g, stroke_num)
 
             patch_y = 4 * render_size_y // 5
             patch_x = 4 * render_size_x // 5
             expand_img = nn.functional.pad(original_img, [patch_x // 2, patch_x // 2,
                                             patch_y // 2, patch_y // 2])
             wB_xid_list, wB_yid_list, wB_fore_list, wB_alpha_list, wB_error_list, wB_params = \
-                get_single_layer_lists(param, decision, expand_img, render_size_x, render_size_y, h, w, 
+                get_single_layer_lists(param, expand_img, render_size_x, render_size_y, h, w, 
                                         meta_brushes, dilation, erosion, stroke_num)
             #* -------------------------------------------------------------*#
             #* -------------rank strokes and plot stroke one by one---------*#
